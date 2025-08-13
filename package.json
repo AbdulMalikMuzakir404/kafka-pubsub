@@ -1,0 +1,28 @@
+{
+  "name": "kafka-pubsub",
+  "version": "1.0.0",
+  "description": "Kafka Producer and Consumer for production use",
+  "main": "index.js",
+  "scripts": {
+    "start:producer": "bun run kafka-producer.js",
+    "start:consumer": "bun run kafka-consumer.js",
+    "test:connection": "bun run test-connection.js",
+    "dev": "bun run --watch kafka-producer.js"
+  },
+  "keywords": [
+    "kafka",
+    "producer",
+    "consumer",
+    "pubsub",
+    "message-queue"
+  ],
+  "author": "Abdul Malik Muzakir",
+  "dependencies": {
+    "kafka-node": "^5.0.0",
+    "kafkajs": "^2.2.4"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "bun": ">=1.0.0"
+  }
+}
