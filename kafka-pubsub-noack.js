@@ -20,7 +20,7 @@ class KafkaPubSubNoAck {
       fetchMaxWaitMs: 1000,
       fetchMinBytes: 1,
       fetchMaxBytes: 1024 * 1024,
-      fromOffset: false,
+      fromOffset: false, // ✅ boolean, not "latest"
 
       ...options,
     };

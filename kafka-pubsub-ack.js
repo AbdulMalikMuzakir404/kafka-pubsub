@@ -53,6 +53,7 @@ class KafkaPubSubAck {
           }
         );
 
+        // ✅ Handle offset out of range
         this.consumer.on("offsetOutOfRange", (err) => {
           console.log("⚠️ Offset out of range detected. Seeking to latest...");
           const offset = new kafka.Offset(this.client);
