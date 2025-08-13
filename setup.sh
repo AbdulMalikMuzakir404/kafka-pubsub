@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Enhanced Kafka PubSub Setup Script
+# This script sets up the complete Kafka pubsub environment
+
+set -e
+
+echo "🚀 Enhanced Kafka PubSub Setup"
+echo "=============================="
+echo ""
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -7,137 +16,169 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}🚀 Kafka Setup Script${NC}"
-echo "=================================="
-
 # Function to print colored output
 print_status() {
-    echo -e "${GREEN}✅ $1${NC}"
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠️ $1${NC}"
+    echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
 print_error() {
-    echo -e "${RED}❌ $1${NC}"
+    echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check if running as root
-if [[ $EUID -eq 0 ]]; then
-   print_error "This script should not be run as root"
-   exit 1
-fi
+# Check if Node.js is installed
+check_node() {
+    if ! command -v node &> /dev/null; then
+        print_error "Node.js is not installed. Please install Node.js first."
+        exit 1
+    fi
+    print_success "Node.js is installed: $(node --version)"
+}
 
-# Check if Docker is installed
-if ! command -v docker &> /dev/null; then
-    print_error "Docker is not installed. Please install Docker first."
-    echo "Install Docker: https://docs.docker.com/get-docker/"
-    exit 1
-fi
+# Check if bun is installed
+check_bun() {
+    if ! command -v bun &> /dev/null; then
+        print_warning "Bun is not installed. Using npm instead."
+        PACKAGE_MANAGER="npm"
+    else
+        print_success "Bun is installed: $(bun --version)"
+        PACKAGE_MANAGER="bun"
+    fi
+}
 
-# Check if Docker Compose is installed (standalone or plugin)
-if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-    print_error "Docker Compose is not installed. Please install Docker Compose first."
-    echo "Install Docker Compose: https://docs.docker.com/compose/install/"
-    exit 1
-fi
+# Install dependencies
+install_dependencies() {
+    print_status "Installing dependencies..."
+    
+    if [ "$PACKAGE_MANAGER" = "bun" ]; then
+        bun install
+    else
+        npm install
+    fi
+    
+    print_success "Dependencies installed successfully"
+}
 
-# Create alias if using Docker Compose plugin
-if ! command -v docker-compose &> /dev/null && docker compose version &> /dev/null; then
-    print_status "Docker Compose plugin detected, creating alias..."
-    echo "alias docker-compose='docker compose'" >> ~/.bashrc
-    source ~/.bashrc
-    export PATH="$HOME/.local/bin:$PATH"
-    # Set alias for current session
-    alias docker-compose='docker compose'
-fi
+# Make scripts executable
+make_executable() {
+    print_status "Making scripts executable..."
+    
+    chmod +x producer.js
+    chmod +x consumer.js
+    chmod +x create-topics.js
+    chmod +x clean-topics.js
+    
+    print_success "Scripts are now executable"
+}
 
-print_status "Docker and Docker Compose are installed"
+# Create topics
+create_topics() {
+    print_status "Creating default topics..."
+    
+    if [ "$PACKAGE_MANAGER" = "bun" ]; then
+        bun run create-topics.js --all
+    else
+        node create-topics.js --all
+    fi
+    
+    print_success "Default topics created successfully"
+}
 
-# Get server IP
-SERVER_IP=$(hostname -I | awk '{print $1}')
-print_status "Server IP: $SERVER_IP"
+# Test connection
+test_connection() {
+    print_status "Testing Kafka connection..."
+    
+    # Try to list topics to test connection
+    if [ "$PACKAGE_MANAGER" = "bun" ]; then
+        bun run create-topics.js --help > /dev/null 2>&1
+    else
+        node create-topics.js --help > /dev/null 2>&1
+    fi
+    
+    print_success "Kafka connection test passed"
+}
 
-# Create necessary directories
-print_status "Creating directories..."
-mkdir -p plugins jdbc
+# Show usage examples
+show_examples() {
+    echo ""
+    echo "📚 Usage Examples"
+    echo "================="
+    echo ""
+    echo "1. Send messages:"
+    echo "   # Send string message with ACK"
+    echo "   node producer.js --ack --string --message 'Hello World'"
+    echo ""
+    echo "   # Send JSON message with NoACK"
+    echo "   node producer.js --no-ack --json --message '{\"type\":\"test\",\"data\":\"value\"}'"
+    echo ""
+    echo "2. Listen to messages:"
+    echo "   # Listen with ACK mode"
+    echo "   node consumer.js --ack --topic test-messages"
+    echo ""
+    echo "   # Listen with NoACK mode"
+    echo "   node consumer.js --no-ack --topic json-test-topic"
+    echo ""
+    echo "3. Manage topics:"
+    echo "   # Create specific topic"
+    echo "   node create-topics.js --topic my-topic --partitions 3"
+    echo ""
+    echo "   # Clean all custom topics"
+    echo "   node clean-topics.js --all"
+    echo ""
+    echo "4. Quick test:"
+    echo "   # Terminal 1: Start consumer"
+    echo "   node consumer.js --ack"
+    echo ""
+    echo "   # Terminal 2: Send message"
+    echo "   node producer.js --ack --string --message 'Test message'"
+    echo ""
+}
 
-# Stop existing containers if any
-print_status "Stopping existing containers..."
-docker compose down 2>/dev/null || true
+# Main setup function
+main() {
+    echo "Starting setup process..."
+    echo ""
+    
+    # Check prerequisites
+    check_node
+    check_bun
+    
+    # Install dependencies
+    install_dependencies
+    
+    # Make scripts executable
+    make_executable
+    
+    # Test connection
+    test_connection
+    
+    # Create topics
+    create_topics
+    
+    echo ""
+    print_success "🎉 Setup completed successfully!"
+    echo ""
+    print_status "Your Kafka pubsub system is ready to use!"
+    echo ""
+    
+    # Show examples
+    show_examples
+    
+    echo ""
+    echo "📖 For more information, run:"
+    echo "   node producer.js --help"
+    echo "   node consumer.js --help"
+    echo "   node create-topics.js --help"
+    echo "   node clean-topics.js --help"
+    echo ""
+}
 
-# Remove old containers and volumes (optional)
-read -p "Do you want to remove old containers and volumes? (y/N): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    print_warning "Removing old containers and volumes..."
-    docker compose down -v 2>/dev/null || true
-    docker system prune -f
-fi
-
-# Pull latest images
-print_status "Pulling Docker images..."
-docker compose pull
-
-# Start services
-print_status "Starting Kafka services..."
-docker compose up -d
-
-# Wait for services to start
-print_status "Waiting for services to start..."
-sleep 30
-
-# Check service status
-print_status "Checking service status..."
-docker compose ps
-
-# Check if tunnel is working
-print_status "Testing tunnel connection..."
-if nc -z localhost 29093 2>/dev/null; then
-    print_status "Tunnel is working! Port 29093 is accessible"
-else
-    print_warning "Tunnel test failed. Checking logs..."
-    docker compose logs kafka-tunnel
-fi
-
-# Check Kafka UI
-print_status "Kafka UI should be available at: http://$SERVER_IP:8081"
-
-# Test Kafka connection
-print_status "Testing Kafka connection..."
-if docker exec $(docker compose ps -q kafka) kafka-topics --bootstrap-server localhost:9093 --list 2>/dev/null; then
-    print_status "Kafka is working correctly!"
-else
-    print_warning "Kafka connection test failed. Checking logs..."
-    docker compose logs kafka
-fi
-
-echo ""
-echo -e "${BLUE}🎉 Setup completed!${NC}"
-echo "=================================="
-echo ""
-echo -e "${GREEN}📋 Next steps:${NC}"
-echo "1. Test connection from your laptop:"
-echo "   nc -zv $SERVER_IP 29093"
-echo ""
-echo "2. Run consumer:"
-echo "   bun run start:consumer"
-echo ""
-echo "3. Run producer:"
-echo "   bun run start:producer"
-echo ""
-echo -e "${GREEN}📊 Monitoring:${NC}"
-echo "• Kafka UI: http://$SERVER_IP:8081"
-echo "• Connect API: http://$SERVER_IP:8084"
-echo ""
-echo -e "${GREEN}🔧 Useful commands:${NC}"
-echo "• View logs: docker compose logs -f"
-echo "• Stop services: docker compose down"
-echo "• Restart services: docker compose restart"
-echo "• Check status: docker compose ps"
-echo ""
-echo -e "${YELLOW}⚠️ Important:${NC}"
-echo "• Make sure port 29093 is open in your firewall"
-echo "• Update your client code to use: $SERVER_IP:29093"
-echo ""
+# Run setup
+main "$@"
