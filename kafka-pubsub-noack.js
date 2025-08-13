@@ -9,23 +9,22 @@ class KafkaPubSubNoAck {
       // Connection options
       connectTimeout: 10000,
       requestTimeout: 30000,
-      
+
       // Producer options (no ACK - fire and forget)
-      requireAcks: 0, // No acknowledgment for maximum speed
+      requireAcks: 0,
       ackTimeoutMs: 1000,
-      
+
       // Consumer options
       autoCommit: true,
       autoCommitIntervalMs: 5000,
       fetchMaxWaitMs: 1000,
       fetchMinBytes: 1,
       fetchMaxBytes: 1024 * 1024,
-      fromOffset: "latest",
-      
+      fromOffset: false,
+
       ...options,
     };
 
-    // State management
     this.client = null;
     this.producer = null;
     this.consumer = null;
@@ -81,13 +80,7 @@ class KafkaPubSubNoAck {
     }
 
     return new Promise((resolve, reject) => {
-      const messageValue = message.toString();
-      
-      const payload = {
-        topic: this.topic,
-        messages: messageValue,
-      };
-
+      const payload = { topic: this.topic, messages: message.toString() };
       this.producer.send([payload], (err, result) => {
         if (err) {
           console.log("❌ Error publishing message:", err.message);
@@ -188,6 +181,24 @@ class KafkaPubSubNoAck {
           }
         );
 
+        // ✅ Fix: Move to latest offset if out of range
+        this.consumer.on("offsetOutOfRange", () => {
+          console.log("⚠️ Offset out of range detected. Seeking to latest...");
+          const offset = new kafka.Offset(this.client);
+          offset.fetch(
+            [{ topic: this.topic, partition: 0, time: -1, maxNum: 1 }],
+            (error, data) => {
+              if (error) {
+                console.error("❌ Failed to fetch latest offset:", error);
+                return;
+              }
+              const latest = data[this.topic][0][0];
+              console.log(`⏩ Moving consumer to offset ${latest}`);
+              this.consumer.setOffset(this.topic, 0, latest);
+            }
+          );
+        });
+
         this.consumer.on("message", (message) => {
           this.handleMessage(message);
         });
@@ -196,10 +207,6 @@ class KafkaPubSubNoAck {
           console.log("❌ Consumer error:", err.message);
           this.isConsumerConnected = false;
           reject(err);
-        });
-
-        this.consumer.on("offsetOutOfRange", (err) => {
-          console.log("⚠️ Offset out of range:", err.message);
         });
 
         this.client.on("ready", () => {
@@ -223,16 +230,14 @@ class KafkaPubSubNoAck {
 
   handleMessage(message) {
     const messageValue = message.value.toString();
-    
+
     console.log("📨 Received message (no ACK mode):");
     console.log("  Topic:", message.topic);
     console.log("  Partition:", message.partition);
     console.log("  Offset:", message.offset);
-    console.log("  Key:", message.key ? message.key.toString() : "No key");
     console.log("  Value:", messageValue);
     console.log("  ---");
 
-    // Call registered message handlers
     this.messageHandlers.forEach((handler) => {
       try {
         handler(message, messageValue);
@@ -252,7 +257,6 @@ class KafkaPubSubNoAck {
         this.consumer.close(true, () => {
           console.log("✅ Consumer closed");
           this.isConsumerConnected = false;
-
           if (this.client) {
             this.client.close(() => {
               console.log("🔌 Consumer disconnected");
@@ -268,114 +272,12 @@ class KafkaPubSubNoAck {
     });
   }
 
-  // ==================== UTILITY METHODS ====================
-
-  isProducerReady() {
-    return this.isProducerConnected;
-  }
-
-  isConsumerReady() {
-    return this.isConsumerConnected;
-  }
-
   async disconnect() {
     await Promise.all([
       this.disconnectProducer(),
       this.disconnectConsumer(),
     ]);
   }
-
-  // ==================== PERFORMANCE METHODS ====================
-
-  async publishStream(messages, batchSize = 100) {
-    if (!this.isProducerConnected) {
-      throw new Error("Producer not connected. Call connectProducer() first.");
-    }
-
-    console.log(`🚀 Starting high-volume stream: ${messages.length} messages`);
-    
-    const batches = [];
-    for (let i = 0; i < messages.length; i += batchSize) {
-      batches.push(messages.slice(i, i + batchSize));
-    }
-
-    let totalPublished = 0;
-    
-    for (const batch of batches) {
-      try {
-        await this.publishHighVolume(batch);
-        totalPublished += batch.length;
-        console.log(`📊 Progress: ${totalPublished}/${messages.length} messages published`);
-      } catch (error) {
-        console.log(`❌ Error in batch: ${error.message}`);
-      }
-    }
-
-    console.log(`🎉 Stream completed: ${totalPublished} messages published`);
-    return totalPublished;
-  }
-}
-
-// Example usage
-async function main() {
-  const pubsub = new KafkaPubSubNoAck(
-    "167.71.217.60:29093",
-    "test-messages",
-    "noack-consumer-group"
-  );
-
-  // Add message handler
-  pubsub.onMessage((message, value) => {
-    console.log("🎯 NoACK Handler: Processing message:", value);
-  });
-
-  try {
-    // Connect both producer and consumer
-    await pubsub.connectProducer();
-    await pubsub.connectConsumer();
-
-    console.log("🎧 PubSub is running, waiting for messages...");
-    console.log("Press Ctrl+C to stop");
-
-    // Send some test messages
-    await pubsub.publish("Hello from NoACK producer!");
-    await pubsub.publish("High-speed message delivery", "user-123");
-
-    // Send batch messages
-    const batchMessages = [
-      { content: "NoACK Batch message 1" },
-      { content: "NoACK Batch message 2" },
-      { content: "NoACK Batch message 3" },
-    ];
-    await pubsub.publishBatch(batchMessages);
-
-    // Send high volume stream
-    const highVolumeMessages = Array.from({ length: 50 }, (_, i) => 
-      `High volume message ${i + 1}`
-    );
-    await pubsub.publishStream(highVolumeMessages, 10);
-
-    // Keep the process running
-    process.on("SIGINT", async () => {
-      console.log("\n🛑 Shutting down NoACK PubSub...");
-      await pubsub.disconnect();
-      process.exit(0);
-    });
-
-    process.on("SIGTERM", async () => {
-      console.log("\n🛑 Shutting down NoACK PubSub...");
-      await pubsub.disconnect();
-      process.exit(0);
-    });
-  } catch (error) {
-    console.log("❌ Error:", error.message);
-    await pubsub.disconnect();
-    process.exit(1);
-  }
-}
-
-if (require.main === module) {
-  main();
 }
 
 module.exports = KafkaPubSubNoAck;

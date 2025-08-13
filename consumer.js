@@ -181,6 +181,9 @@ async function consumeMessages() {
   });
 
   try {
+    console.log("🔄 Resetting consumer offsets to latest...");
+    await pubsub.resetOffsetsToLatest();
+
     await pubsub.connectConsumer();
     
     console.log("✅ Connected to Kafka");
